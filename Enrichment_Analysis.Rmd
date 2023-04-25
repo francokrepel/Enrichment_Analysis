@@ -136,7 +136,7 @@ IPIvsMem_kegg <- kegg_enrichment(IPIvsMem, "IPI vs Mem", plot_dir)
 UltvsCyto_kegg <- kegg_enrichment(UltvsCyto, "Ult vs Cyto", plot_dir)
 UltvsMem_kegg <- kegg_enrichment(UltvsMem, "Ult vs Mem", plot_dir)
 
-# NOTE, FOR PATHVIEW, MANUALLY COMMENT IN THE PATHVIEW FUNCTION FOR DIFF GENE, LIKE FIRST AND LAST FUNCTION
+# NOTE, FOR PATHVIEW, MANUALLY COMMENT IN THE PATHVIEW FUNCTION FOR DIFF PATHWAYS, USE  mmu0380 mmu04740 as pathway.id or run on first and last function
 ```
 
 Reactome Enrichment:
