@@ -1,0 +1,214 @@
+---
+title: "EnrichmentHE"
+output: html_document
+date: "2023-04-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+setwd("/Users/francokrepel/Documents/College/Research/Enrichment_Analysis")
+```
+
+Load Required Packages
+```{r}
+library(tidyverse)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(rWikiPathways)
+library(ReactomePA)
+library(pathview)
+library(enrichplot)
+
+```
+
+Import Data
+```{r}
+IPIvsCyto <- fread("IPIvsCyto.csv")
+IPIvsMem <- fread("IPIvsMem.csv")
+IPIvsUlt <- fread("IPIvsUlt.csv")
+UltvsCyto <- fread("UltvsCyto.csv")
+UltvsMem <- fread("UltvsMem.csv")
+```
+
+Preprocessing of data:
+```{r}
+preprocess_enrichment <- function(diff_exp_df) {
+  # Extract gene symbols and fold change values
+  gene_list <- diff_exp_df$Gene
+  fold_changes <- diff_exp_df$log2FoldChange
+
+  # Convert gene symbols to Entrez IDs
+  entrez_ids <- mapIds(org.Mm.eg.db, keys = gene_list, column = "ENTREZID", keytype = "SYMBOL", multiVals = "first")
+
+  # Create a data frame with Entrez IDs and fold change values, remove NAs
+  entrez_fc_df <- data.frame(ENTREZID = entrez_ids, log2FoldChange = fold_changes, stringsAsFactors = FALSE)
+  entrez_fc_df <- entrez_fc_df[!is.na(entrez_fc_df$ENTREZID),]
+
+  # Sort in decreasing order as required for clusterProfiler
+  entrez_fc_df <- entrez_fc_df %>% arrange(desc(log2FoldChange))
+
+  # I think it requires input as a vector, as this silenced the error
+  entrez_fc_vector <- setNames(object = entrez_fc_df$log2FoldChange, nm = entrez_fc_df$ENTREZID)
+  
+  return(entrez_fc_vector)
+}
+```
+
+
+Go Enrichment Function:
+```{r}
+go_enrichment <- function(diff_exp_df, title, plot_dir) {
+  entrez_fc_vector <- preprocess_enrichment(diff_exp_df)
+  go_enrich <- gseGO(
+                     geneList      = entrez_fc_vector,
+                     OrgDb         = org.Mm.eg.db,
+                     ont           = "ALL",
+                     pAdjustMethod = "BH", # new
+                     minGSSize     = 100,
+                     maxGSSize     = 500,
+                     pvalueCutoff  = 0.05,
+                     verbose       = FALSE)
+
+  # Plot results using dotplot function
+  require(DOSE)
+  dotplot_obj <- dotplot(go_enrich, showCategory=10, title = paste(title, "GO Pathways"))
+  ggsave(paste(plot_dir, "/", title, "_dotplot.png", sep = ""), dotplot_obj)
+
+  ridgeplot_obj <- ridgeplot(go_enrich, showCategory=10) + labs(x = "enrichment distribution") + ggtitle(paste(title, "GO Pathways"))
+  ggsave(paste(plot_dir, "/", title, "_ridgeplot.png", sep = ""), ridgeplot_obj)
+
+  
+  # Return the results object for further analysis
+  return(go_enrich)
+}
+```
+
+Run GO Enrichment on all dataframes
+```{r}
+plot_dir <- "Go_Results"
+IPIvsCyto_GO <- go_enrichment(IPIvsCyto, "IPI vs Cyto", plot_dir)
+IPIvsMem_GO <- go_enrichment(IPIvsMem, "IPI vs Mem", plot_dir)
+# DOESNT WORK: IPIvsUlt_GO <- go_enrichment(IPIvsUlt, "IPI vs Ult")
+UltvsCyto_GO <- go_enrichment(UltvsCyto, "Ult vs Cyto", plot_dir)
+UltvsMem_GO <- go_enrichment(UltvsMem, "Ult vs Mem", plot_dir)
+```
+
+KEGG Enrichment Function:
+```{r}
+kegg_enrichment <- function(diff_exp_df, title, plot_dir) {
+  entrez_fc_vector <- preprocess_enrichment(diff_exp_df)
+  kegg_enrich <- gseKEGG(
+                 geneList      = entrez_fc_vector,
+                 organism      = "mmu",
+                 minGSSize     = 100,
+                 maxGSSize     = 500,
+                 pvalueCutoff  = 0.05,
+                 pAdjustMethod = "BH",
+                 verbose       = FALSE
+                 )
+  require(DOSE)
+  dotplot_obj <- dotplot(kegg_enrich, showCategory=10, title = paste(title, "KEGG Pathways"))
+  ggsave(paste(plot_dir, "/", title, "_dotplot.png", sep = ""), dotplot_obj)
+
+  # NOTE, I RAN THE FOLLOWING MANUALLY ONLY, MUST MANUALLY COMMENT IN/OUT AS WONT WORK FOR ALL
+#  dme <- pathview(gene.data=entrez_fc_vector , pathway.id= kegg_enrich$ID[1], species = "mmu")
+
+  # Return the results object for further analysis
+  return(kegg_enrich)
+}
+```
+
+Run KEGG Enrichment:
+```{r}
+plot_dir <- "KEGG_Results"
+IPIvsCyto_kegg <- kegg_enrichment(IPIvsCyto, "IPI vs Cyto", plot_dir)
+IPIvsMem_kegg <- kegg_enrichment(IPIvsMem, "IPI vs Mem", plot_dir)
+# DOESNT WORK: IPIvsUlt_results <- kegg_enrichment(IPIvsUlt, "IPI vs Ult")
+UltvsCyto_kegg <- kegg_enrichment(UltvsCyto, "Ult vs Cyto", plot_dir)
+UltvsMem_kegg <- kegg_enrichment(UltvsMem, "Ult vs Mem", plot_dir)
+
+# NOTE, FOR PATHVIEW, MANUALLY COMMENT IN THE PATHVIEW FUNCTION FOR DIFF GENE, LIKE FIRST AND LAST FUNCTION
+```
+
+Reactome Enrichment:
+```{r}
+reactome_enrich  <- function(diff_exp_df, title, plot_dir) {
+  entrez_fc_vector <- preprocess_enrichment(diff_exp_df)
+  react_enrich <- gseKEGG(
+                 geneList      =  entrez_fc_vector,
+                 organism      =  "mouse",
+                 minGSSize     =  100,
+                 maxGSSize     =  500,
+                 pvalueCutoff  =  0.05,
+                 pAdjustMethod =  "BH",
+                 verbose       =  FALSE
+                 )
+  require(DOSE)
+  dotplot_obj <- dotplot(react_enrich, showCategory=10, title = paste(title, "Reactome Pathways"))
+  ggsave(paste(plot_dir, "/", title, "_dotplot.png", sep = ""), dotplot_obj)
+
+  return(react_enrich)
+}
+```
+
+Run Reactome Enrichment:
+
+```{r}
+plot_dir <- "Reactome_Results"
+IPIvsCyto_react <- reactome_enrich(IPIvsCyto, "IPI vs Cyto", plot_dir)
+IPIvsMem_react <- reactome_enrich(IPIvsMem, "IPI vs Mem", plot_dir)
+UltvsCyto_react <- reactome_enrich(UltvsCyto, "Ult vs Cyto", plot_dir)
+UltvsMem_react <- reactome_enrich(UltvsMem, "Ult vs Mem", plot_dir)
+```
+
+WikiPathways
+```{r}
+wiki_enrich  <- function(diff_exp_df, title, plot_dir) {
+  entrez_fc_vector <- preprocess_enrichment(diff_exp_df)
+  wiki_enrich <- gseWP(
+                 geneList      =  entrez_fc_vector,
+                 organism      =  "mouse",
+                 minGSSize     =  100,
+                 maxGSSize     =  500,
+                 pvalueCutoff  =  0.05,
+                 pAdjustMethod =  "BH",
+                 verbose       =  FALSE
+                 )
+  
+  # No mapping therefore commented out
+  # require(DOSE)
+  # dotplot_obj <- dotplot(wiki_enrich, showCategory=10, title = paste(title, "WikiPathways Pathways"))
+  # ggsave(paste(plot_dir, "/", title, "_dotplot.png", sep = ""), dotplot_obj)
+  
+  return(wiki_enrich)
+
+}
+```
+
+WIKIPATHWAYS CANNOT MAP
+
+Run WikiPathways Enirchment
+```{r}
+plot_dir <- "WikiPathways_Results"
+IPIvsCyto_wiki <- wiki_enrich(IPIvsCyto, "IPI vs Cyto", plot_dir)
+IPIvsMem_wiki <- wiki_enrich(IPIvsMem, "IPI vs Mem", plot_dir)
+UltvsCyto_wiki <- wiki_enrich(UltvsCyto, "Ult vs Cyto", plot_dir)
+UltvsMem_wiki <- wiki_enrich(UltvsMem, "Ult vs Mem", plot_dir)
+
+```
+
+Check on the info:
+```{r}
+IPIvsCyto_wiki
+```
+
+
